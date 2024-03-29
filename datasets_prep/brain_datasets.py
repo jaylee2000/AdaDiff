@@ -1,32 +1,26 @@
 import torch.utils.data
-import numpy as np, h5py
+import numpy as np
+import h5py
 import random
+import os
 
+def load_data(filename):
+    with h5py.File(filename, 'r') as f:
+        data_fs = np.expand_dims(np.transpose(np.array(f['data_fs'], (0,2,1)),axis=1))
+        return data_fs.astype(np.float32)
 
-#This function loads t1, t2, and pd-weighted images in ixi for uncoditional synthesis
+# This function loads t1, t2, and pd-weighted images in ixi for unconditional synthesis
 def CreateDataset(phase='train'):
+    base_path = '/fast_storage/intern2/'
+    file_names = [f'{w}_1_multi_synth' for w in ['T1', 'T2', 'PD']]
+    data_fs_list = [load_data(os.path.join(base_path, name + str(phase) + '.mat')) for name in file_names]
 
-    target_file='/fast_storage/intern2/T1_1_multi_synth_recon_'+str(phase)+'.mat'
-    f = h5py.File(target_file,'r') 
-    data_fs_t1=np.expand_dims(np.transpose(np.array(f['data_fs']),(0,2,1)),axis=1)
-    data_fs_t1=data_fs_t1.astype(np.float32)        
-    
-    target_file='/fast_storage/intern2/T2_1_multi_synth_recon_'+str(phase)+'.mat'
-    f = h5py.File(target_file,'r') 
-    data_fs_t2=np.expand_dims(np.transpose(np.array(f['data_fs']),(0,2,1)),axis=1)
-    data_fs_t2=data_fs_t2.astype(np.float32)
-    
-    target_file='/fast_storage/intern2/PD_1_multi_synth_recon_'+str(phase)+'.mat'
-    f = h5py.File(target_file,'r') 
-    data_fs_pd=np.expand_dims(np.transpose(np.array(f['data_fs']),(0,2,1)),axis=1)
-    data_fs_pd=data_fs_pd.astype(np.float32)
-   
-    data_fs=np.concatenate((data_fs_t1[0:800,:],data_fs_t2[0:800,:],data_fs_pd[0:800,:]),axis=0)
-    data_fs=np.pad(data_fs,((0,0),(0,0),(0,0),(52,52)))
+    data_fs = np.concatenate([data[0:800, :] for data in data_fs_list], axis=0)
+    data_fs = np.pad(data_fs,((0,0),(0,0),(0,0),(52,52)))
     data_fs[data_fs<0]=0
-    data_fs=(data_fs-0.5)/0.5
-    dataset=[]
-    dataset=torch.utils.data.TensorDataset(torch.from_numpy(data_fs),torch.zeros([data_fs.shape[0],1]))   
+    data_fs = (data_fs-0.5)/0.5
+
+    dataset=torch.utils.data.TensorDataset(torch.from_numpy(data_fs),torch.zeros([data_fs.shape[0],1]))
     print(data_fs.shape)  
 
     return dataset 
