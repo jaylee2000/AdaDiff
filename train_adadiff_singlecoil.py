@@ -5,7 +5,7 @@ import torchvision
 import torch
 import numpy as np
 
-from datasets_prep.brain_datasets import CreateDataset
+from datasets_prep.brain_datasets import CreateTrainDataset
 from utils.args_op import add_singlecoil_train_args
 from utils.models.discriminator import Discriminator_large
 from utils.models.ncsnpp_generator_adagn import NCSNpp
@@ -22,7 +22,7 @@ def set_seed(seed_no):
 
 def prepare_dataset(rank, args):
     """ Create dataset. Return train sampler, data loader, and args. """
-    dataset = CreateDataset()
+    dataset = CreateTrainDataset()
     train_sampler = torch.utils.data.distributed.DistributedSampler(
                         dataset, num_replicas=args.world_size, rank=rank)
     data_loader = torch.utils.data.DataLoader(
