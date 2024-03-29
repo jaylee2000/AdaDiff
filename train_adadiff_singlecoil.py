@@ -11,7 +11,7 @@ from utils.models.discriminator import Discriminator_large
 from utils.models.ncsnpp_generator_adagn import NCSNpp
 from utils.EMA import EMA
 
-PARENT_BASE_DIR = "../diffusion_test/saved_info/dd_gan"
+PARENT_BASE_DIR = "../diffusion_test"
 MASTER_PORT = '6025'
 
 def set_seed(seed_no):
@@ -209,14 +209,9 @@ def sample_from_model(coefficients, generator, n_time, x_init, T, opt):
             x = x_new.detach()
     return x
 
-#%%
 def train(rank, gpu, args):
     set_seed(args.seed + rank)
     device = torch.device('cuda:{}'.format(gpu))
-
-    batch_size = args.batch_size
-    nz = args.nz #latent dimension
-    args.dataset = 'brain'
 
     # Dataset preparation
     train_sampler, data_loader, args = prepare_dataset(rank, args)
@@ -282,7 +277,7 @@ def train(rank, gpu, args):
                     grad_penalty.backward()
 
             # train with fake
-            latent_z = torch.randn(batch_size, nz, device=device)
+            latent_z = torch.randn(args.batch_size, args.nz, device=device)
             x_0_predict = netG(x_tp1.detach(), t, latent_z)
             x_pos_sample = sample_posterior(pos_coeff, x_0_predict, x_tp1, t)
             output = netD(x_pos_sample, t, x_tp1.detach()).view(-1)
@@ -298,7 +293,7 @@ def train(rank, gpu, args):
             netG.zero_grad()
             t = torch.randint(0, args.num_timesteps, (real_data.size(0),), device=device)
             x_t, x_tp1 = q_sample_pairs(coeff, real_data, t)
-            latent_z = torch.randn(batch_size, nz,device=device)
+            latent_z = torch.randn(args.batch_size, args.nz, device=device)
             x_0_predict = netG(x_tp1.detach(), t, latent_z)
             x_pos_sample = sample_posterior(pos_coeff, x_0_predict, x_tp1, t)
             output = netD(x_pos_sample, t, x_tp1.detach()).view(-1)
