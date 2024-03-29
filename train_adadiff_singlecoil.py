@@ -53,10 +53,11 @@ def get_var_schedule(t, args):
     """
     Return variance array for diffusion process
     """
-    if args.use_geometric:
+    if ~args.use_geometric:
         log_mean_coeff = -0.25 * t ** 2 * (args.beta_max - args.beta_min) - 0.5 * t * args.beta_min
         var = 1. - torch.exp(2. * log_mean_coeff)
     else:
+        # doesn't work for (beta_min, beta_max) == (0.1, 20) ; some betas become negative
         var = args.beta_min * ((args.beta_max / args.beta_min) ** t)
     return var
 
@@ -71,7 +72,6 @@ def get_sigma_schedule(args, device):
     alpha_bars = 1.0 - var
     betas = 1 - alpha_bars[1:] / alpha_bars[:-1]
     betas = torch.cat((torch.tensor([1e-8]), betas)).to(device).float()
-    import pdb; pdb.set_trace()
     return betas.sqrt(), (1-betas).sqrt(), betas
 
 class Diffusion_Coefficients():
@@ -116,7 +116,6 @@ def q_sample_pairs(coeff, x_start, t):
     x_t = q_sample(coeff, x_start, t)
     x_t_plus_one = extract(coeff.a_s, t+1, x_start.shape) * x_t + \
                    extract(coeff.sigmas, t+1, x_start.shape) * noise
-    import pdb; pdb.set_trace()
     return x_t, x_t_plus_one
 
 ## Posterior sampling
@@ -213,7 +212,6 @@ def train(rank, gpu, args):
 
             # sample t
             t = torch.randint(0, args.num_timesteps, (real_data.size(0),), device=device)
-            import pdb; pdb.set_trace()
             x_t, x_tp1 = q_sample_pairs(coeff, real_data, t)
             x_t.requires_grad = True
 
