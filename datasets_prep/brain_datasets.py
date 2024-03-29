@@ -12,7 +12,7 @@ def load_data(filename):
 # This function loads t1, t2, and pd-weighted images in ixi for unconditional synthesis
 def CreateDataset(phase='train'):
     base_path = '/fast_storage/intern2/'
-    file_names = [f'{w}_1_multi_synth' for w in ['T1', 'T2', 'PD']]
+    file_names = [f'{w}_1_multi_synth_recon_' for w in ['T1', 'T2', 'PD']]
     data_fs_list = [load_data(os.path.join(base_path, name + str(phase) + '.mat')) for name in file_names]
 
     data_fs = np.concatenate([data[0:800, :] for data in data_fs_list], axis=0)
