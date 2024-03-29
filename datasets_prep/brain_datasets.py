@@ -8,11 +8,6 @@ from torch.utils.data import TensorDataset
 DATASET_BASE_PATH = '/fast_storage/intern2/'
 N_DATA = 800 # per contrast
 
-def load_data(filename):
-    with h5py.File(filename, 'r') as f:
-        data_fs = np.expand_dims(np.transpose(np.array(f['data_fs'], (0,2,1)),axis=1))
-        return data_fs.astype(np.float32)
-
 def LoadDataSet(load_dir, variable='data_fs', padding=True, Norm=True, res=256):
     """
     Load data from .mat file
