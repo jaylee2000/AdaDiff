@@ -41,10 +41,11 @@ def initialize_models(args, device):
 
 def setup_optim_schedulers(netG, netD, args):
     """Setup the optimizers and schedulers for both models."""
-    optimizerD = torch.optim.Adam(netD.parameters(), lr=args.lr_d, betas=(args.beta1, args.beta2))
     optimizerG = torch.optim.Adam(netG.parameters(), lr=args.lr_g, betas=(args.beta1, args.beta2))
+    optimizerD = torch.optim.Adam(netD.parameters(), lr=args.lr_d, betas=(args.beta1, args.beta2))
     if args.use_ema:
         optimizerG = EMA(optimizerG, ema_decay=args.ema_decay)
+
     schedulerG = torch.optim.lr_scheduler.CosineAnnealingLR(optimizerG, args.num_epoch,
                                                             eta_min=1e-5)
     schedulerD = torch.optim.lr_scheduler.CosineAnnealingLR(optimizerD, args.num_epoch,
@@ -160,6 +161,7 @@ def q_sample_pairs(coeff, x_start, t):
     x_t_plus_one = extract(coeff.a_s, t+1, x_start.shape) * x_t + \
                    extract(coeff.sigmas, t+1, x_start.shape) * noise
     return x_t, x_t_plus_one
+
 #%% posterior sampling
 class Posterior_Coefficients():
     def __init__(self, args, device):
