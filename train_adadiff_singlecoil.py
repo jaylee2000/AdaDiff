@@ -5,13 +5,13 @@ import torchvision
 import torch
 import numpy as np
 
-from datasets_prep.brain_datasets import CreateDataset
+from datasets_prep.brain_datasets import CreateTrainDataset
 from utils.args_op import add_singlecoil_train_args
 from utils.models.discriminator import Discriminator_large
 from utils.models.ncsnpp_generator_adagn import NCSNpp
 from utils.EMA import EMA
 
-PARENT_BASE_DIR = "../diffusion_test/saved_info/dd_gan"
+PARENT_BASE_DIR = "../diffusion_test"
 MASTER_PORT = '6025'
 
 def set_seed(seed_no):
@@ -22,7 +22,7 @@ def set_seed(seed_no):
 
 def prepare_dataset(rank, args):
     """ Create dataset. Return train sampler, data loader, and args. """
-    dataset = CreateDataset()
+    dataset = CreateTrainDataset()
     train_sampler = torch.utils.data.distributed.DistributedSampler(
                         dataset, num_replicas=args.world_size, rank=rank)
     data_loader = torch.utils.data.DataLoader(
@@ -41,10 +41,11 @@ def initialize_models(args, device):
 
 def setup_optim_schedulers(netG, netD, args):
     """Setup the optimizers and schedulers for both models."""
-    optimizerD = torch.optim.Adam(netD.parameters(), lr=args.lr_d, betas=(args.beta1, args.beta2))
     optimizerG = torch.optim.Adam(netG.parameters(), lr=args.lr_g, betas=(args.beta1, args.beta2))
+    optimizerD = torch.optim.Adam(netD.parameters(), lr=args.lr_d, betas=(args.beta1, args.beta2))
     if args.use_ema:
         optimizerG = EMA(optimizerG, ema_decay=args.ema_decay)
+
     schedulerG = torch.optim.lr_scheduler.CosineAnnealingLR(optimizerG, args.num_epoch,
                                                             eta_min=1e-5)
     schedulerD = torch.optim.lr_scheduler.CosineAnnealingLR(optimizerD, args.num_epoch,
@@ -160,6 +161,7 @@ def q_sample_pairs(coeff, x_start, t):
     x_t_plus_one = extract(coeff.a_s, t+1, x_start.shape) * x_t + \
                    extract(coeff.sigmas, t+1, x_start.shape) * noise
     return x_t, x_t_plus_one
+
 #%% posterior sampling
 class Posterior_Coefficients():
     def __init__(self, args, device):
@@ -209,14 +211,9 @@ def sample_from_model(coefficients, generator, n_time, x_init, T, opt):
             x = x_new.detach()
     return x
 
-#%%
 def train(rank, gpu, args):
     set_seed(args.seed + rank)
     device = torch.device('cuda:{}'.format(gpu))
-
-    batch_size = args.batch_size
-    nz = args.nz #latent dimension
-    args.dataset = 'brain'
 
     # Dataset preparation
     train_sampler, data_loader, args = prepare_dataset(rank, args)
@@ -282,7 +279,7 @@ def train(rank, gpu, args):
                     grad_penalty.backward()
 
             # train with fake
-            latent_z = torch.randn(batch_size, nz, device=device)
+            latent_z = torch.randn(args.batch_size, args.nz, device=device)
             x_0_predict = netG(x_tp1.detach(), t, latent_z)
             x_pos_sample = sample_posterior(pos_coeff, x_0_predict, x_tp1, t)
             output = netD(x_pos_sample, t, x_tp1.detach()).view(-1)
@@ -298,7 +295,7 @@ def train(rank, gpu, args):
             netG.zero_grad()
             t = torch.randint(0, args.num_timesteps, (real_data.size(0),), device=device)
             x_t, x_tp1 = q_sample_pairs(coeff, real_data, t)
-            latent_z = torch.randn(batch_size, nz,device=device)
+            latent_z = torch.randn(args.batch_size, args.nz, device=device)
             x_0_predict = netG(x_tp1.detach(), t, latent_z)
             x_pos_sample = sample_posterior(pos_coeff, x_0_predict, x_tp1, t)
             output = netD(x_pos_sample, t, x_tp1.detach()).view(-1)
