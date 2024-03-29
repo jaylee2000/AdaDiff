@@ -19,95 +19,131 @@ def initialize_training_components(args, device):
     pos_coeff = Posterior_Coefficients(args, device)
     return coeff, pos_coeff
 
-#%% Diffusion coefficients 
-def var_func_vp(t, beta_min, beta_max):
-    log_mean_coeff = -0.25 * t ** 2 * (beta_max - beta_min) - 0.5 * t * beta_min
-    var = 1. - torch.exp(2. * log_mean_coeff)
-    return var
-
-def var_func_geometric(t, beta_min, beta_max):
-    return beta_min * ((beta_max / beta_min) ** t)
-
+## Diffusion coefficients 
 def extract(input, t, shape):
+    """
+    Extract elements (specified by t) from input
+
+    Inputs
+    * input: array of length L (num_timesteps or num_timesteps+1)
+    * t: indices of "input" to extract (torch.Tensor of shape [batch_size])
+    * shape: torch.Size(batch_size, n_channel, width, height)
+
+    Output
+    * dimension: [len(t), 1, 1, 1]
+    * values: values of "input" at indices "t"
+    """
     out = torch.gather(input, 0, t)
     reshape = [shape[0]] + [1] * (len(shape) - 1)
     out = out.reshape(*reshape)
     return out
 
-def get_sigma_schedule(args, device):
-    n_timestep = args.num_timesteps
-    beta_min = args.beta_min
-    beta_max = args.beta_max
-    eps_small = 1e-3
+def get_time_array(n_timestep, eps_small=1e-3):
+    """
+    Return a time array rougly [0, 1/n_timestep, 2/n_timestep, ..., 1] with
+    a small epsilon trick to place values in (0, 1) instead of [0, 1]
+        len=n_timestep+1
+    """
     t = np.arange(0, n_timestep + 1, dtype=np.float64)
     t = t / n_timestep
     t = torch.from_numpy(t) * (1. - eps_small) + eps_small
+    return t
+
+def get_var_schedule(t, args):
+    """
+    Return variance array for diffusion process
+    """
     if args.use_geometric:
-        var = var_func_geometric(t, beta_min, beta_max)
+        log_mean_coeff = -0.25 * t ** 2 * (args.beta_max - args.beta_min) - 0.5 * t * args.beta_min
+        var = 1. - torch.exp(2. * log_mean_coeff)
     else:
-        var = var_func_vp(t, beta_min, beta_max)
+        var = args.beta_min * ((args.beta_max / args.beta_min) ** t)
+    return var
+
+def get_sigma_schedule(args, device):
+    """
+    Input: number of timesteps, variance scheduling option
+    Output: schedule of sigmas, alphas, and betas
+            len=num_timesteps+1 (each)
+    """
+    t = get_time_array(args.num_timesteps)
+    var = get_var_schedule(t, args)
     alpha_bars = 1.0 - var
     betas = 1 - alpha_bars[1:] / alpha_bars[:-1]
-    first = torch.tensor(1e-8)
-    betas = torch.cat((first[None], betas)).to(device)
-    betas = betas.type(torch.float32)
-    sigmas = betas**0.5
-    a_s = torch.sqrt(1-betas)
-    return sigmas, a_s, betas
+    betas = torch.cat((torch.tensor([1e-8]), betas)).to(device).float()
+    import pdb; pdb.set_trace()
+    return betas.sqrt(), (1-betas).sqrt(), betas
 
 class Diffusion_Coefficients():
     def __init__(self, args, device):
+        """
+        Input: number of timesteps, variance scheduling option (args)
+        Output: schedule of sigmas, alphas (+cumprods, prevs)
+                len=num_timesteps+1 (each)
+        """
         self.sigmas, self.a_s, _ = get_sigma_schedule(args, device=device)
         self.a_s_cum = np.cumprod(self.a_s.cpu())
         self.sigmas_cum = np.sqrt(1 - self.a_s_cum ** 2)
         self.a_s_prev = self.a_s.clone()
         self.a_s_prev[-1] = 1
+
         self.a_s_cum = self.a_s_cum.to(device)
         self.sigmas_cum = self.sigmas_cum.to(device)
         self.a_s_prev = self.a_s_prev.to(device)
-    
-def q_sample(coeff, x_start, t, *, noise=None):
+
+def q_sample(coeff, x_start, t, noise=None):
     """
-    Diffuse the data (t == 0 means diffused for t step)
+    x_t = alpha_appropirate * x_0 + sigma_appropriate * noise
+    Input: coefficients, x_0, t
+           coeff.a_s_cum => len = num_timesteps+1
+           coeff.sigmas_cum => len = num_timesteps+1
+           x_start => dimensions same as x loaded from DataLoader
+    Output: x_t
     """
     if noise is None:
-      noise = torch.randn_like(x_start)
+        noise = torch.randn_like(x_start)
     x_t = extract(coeff.a_s_cum, t, x_start.shape) * x_start + \
           extract(coeff.sigmas_cum, t, x_start.shape) * noise
     return x_t
 
 def q_sample_pairs(coeff, x_start, t):
     """
-    Generate a pair of disturbed images for training
-    :param x_start: x_0
-    :param t: time step t
-    :return: x_t, x_{t+1}
+    Generate a pair of disturbed images (x_t, x_{t+1}) for training
+    * Input: coefficients, x_0, t
+    * Output: x_t, x_{t+1}
     """
     noise = torch.randn_like(x_start)
     x_t = q_sample(coeff, x_start, t)
     x_t_plus_one = extract(coeff.a_s, t+1, x_start.shape) * x_t + \
                    extract(coeff.sigmas, t+1, x_start.shape) * noise
+    import pdb; pdb.set_trace()
     return x_t, x_t_plus_one
 
-#%% posterior sampling
+## Posterior sampling
 class Posterior_Coefficients():
     def __init__(self, args, device):
+        """
+        Input: number of timesteps, variance scheduling option (args)
+        Output: schedule of posterior coefficients
+                len=num_timesteps (each)
+        """
         _, _, self.betas = get_sigma_schedule(args, device=device)
-        #we don't need the zeros
-        self.betas = self.betas.type(torch.float32)[1:]
+        self.betas = self.betas.type(torch.float32)[1:] # discard first beta (~=0)
         self.alphas = 1 - self.betas
-        self.alphas_cumprod = torch.cumprod(self.alphas, 0)
-        self.alphas_cumprod_prev = torch.cat(
-                                    (torch.tensor([1.], dtype=torch.float32,device=device), self.alphas_cumprod[:-1]), 0
-                                        )               
+
+        self.alphas_cumprod = torch.cumprod(self.alphas, dim=0)
+        self.alphas_cumprod_prev = torch.cat((torch.tensor([1.], dtype=torch.float32, device=device),
+                                              self.alphas_cumprod[:-1]), dim=0)
         self.posterior_variance = self.betas * (1 - self.alphas_cumprod_prev) / (1 - self.alphas_cumprod)
-        self.sqrt_alphas_cumprod = torch.sqrt(self.alphas_cumprod)
-        self.sqrt_recip_alphas_cumprod = torch.rsqrt(self.alphas_cumprod)
-        self.sqrt_recipm1_alphas_cumprod = torch.sqrt(1 / self.alphas_cumprod - 1)
         self.posterior_mean_coef1 = (self.betas * torch.sqrt(self.alphas_cumprod_prev) / (1 - self.alphas_cumprod))
         self.posterior_mean_coef2 = ((1 - self.alphas_cumprod_prev) * torch.sqrt(self.alphas) / (1 - self.alphas_cumprod))
         self.posterior_log_variance_clipped = torch.log(self.posterior_variance.clamp(min=1e-20))
-        
+
+        # not sure if these are ever used
+        self.sqrt_alphas_cumprod = torch.sqrt(self.alphas_cumprod)
+        self.sqrt_recip_alphas_cumprod = torch.rsqrt(self.alphas_cumprod)
+        self.sqrt_recipm1_alphas_cumprod = torch.sqrt(1 / self.alphas_cumprod - 1)
+
 def sample_posterior(coefficients, x_0,x_t, t):
     def q_posterior(x_0, x_t, t):
         mean = (
@@ -173,10 +209,11 @@ def train(rank, gpu, args):
             for p in netD.parameters():  
                 p.requires_grad = True
             netD.zero_grad()
-            real_data = x.to(device, non_blocking=True)
+            real_data = x.to(device, non_blocking=True) # shape: [batch_size, n_channel, width, height]
 
             # sample t
             t = torch.randint(0, args.num_timesteps, (real_data.size(0),), device=device)
+            import pdb; pdb.set_trace()
             x_t, x_tp1 = q_sample_pairs(coeff, real_data, t)
             x_t.requires_grad = True
 
