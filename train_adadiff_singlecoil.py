@@ -93,7 +93,7 @@ class Diffusion_Coefficients():
 
 def q_sample(coeff, x_start, t, noise=None):
     """
-    x_t = alpha_appropirate * x_0 + sigma_appropriate * noise
+    x_t = alpha_appropriate * x_0 + sigma_appropriate * noise
     Input: coefficients, x_0, t
            coeff.a_s_cum => len = num_timesteps+1
            coeff.sigmas_cum => len = num_timesteps+1
@@ -220,7 +220,7 @@ def train(rank, gpu, args):
             errD_real = torch.nn.functional.softplus(-D_real)
             errD_real = errD_real.mean()
 
-            # train Discriminator with real: backward pass & gradient penalty
+            # train Discriminator with real: backward pass w/ gradient penalty
             errD_real.backward(retain_graph=True)
             if args.lazy_reg is None:
                 grad_real = torch.autograd.grad(
