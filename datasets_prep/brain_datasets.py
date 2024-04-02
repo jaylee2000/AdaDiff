@@ -99,11 +99,11 @@ def CreateDatasetReconstruction(phase='test', data='IXI', contrast='T1', R=4):
     Load paired fully sampled and undersampled images along with
     undersampling masks for reconstruction (inference stage w/ fast-adaptation)
     """
-    file_names = [f'{contrast}_{R}_multi_synth_recon_' + str(phase) + '.mat']
-    data_fs = LoadDataSet(os.path.join(DATASET_BASE_PATH, file_names))
-    data_us = LoadDataSet(os.path.join(DATASET_BASE_PATH, file_names),
+    file_name = f'{contrast}_{R}_multi_synth_recon_' + str(phase) + '.mat'
+    data_fs = LoadDataSet(os.path.join(DATASET_BASE_PATH, file_name))
+    data_us = LoadDataSet(os.path.join(DATASET_BASE_PATH, file_name),
                           variable='data_us', padding=False, Norm=False)
-    masks = LoadDataSet(os.path.join(DATASET_BASE_PATH, file_names),
+    masks = LoadDataSet(os.path.join(DATASET_BASE_PATH, file_name),
                         variable='us_masks', padding=False, Norm=False)
 
     dataset = TensorDataset(torch.from_numpy(data_fs),

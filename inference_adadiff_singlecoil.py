@@ -234,21 +234,21 @@ def sample_and_test(args):
     if args.exp !='DIP':
         #if a specific epoch is selected
         if args.epoch_sel:
-            checkpoint_file = '../diffusion_test/saved_info/dd_gan/{}/{}/netG_{}.pth'
+            checkpoint_file = '../diffusion_test/{}/{}/netG_{}.pth'
             load_checkpiont(checkpoint_file, netG, device = device, epoch_sel = True, epoch = args.epoch_id)
         #if the latest  
         else:
-            checkpoint_file = '../diffusion_test/saved_info/dd_gan/{}/{}/content.pth'
+            checkpoint_file = '../diffusion_test/{}/{}/content.pth'
             load_checkpiont(checkpoint_file, netG, device = device)
     #if the network is untrained, this part initilizes a random network and saves it
     else:
-        parent_dir = "../diffusion_test/saved_info/dd_gan/{}".format(args.dataset)
+        parent_dir = "../diffusion_test/{}".format(args.dataset)
         exp_path = os.path.join(parent_dir,args.exp)               
         if not os.path.exists(exp_path):
             os.makedirs(exp_path)        
         content = {'netG_dict': netG.state_dict()}    
         torch.save(content, os.path.join(exp_path, args.contrast+'_content.pth'))   
-        checkpoint_file = '../diffusion_test/saved_info/dd_gan/{}/{}/'+args.contrast+'_content.pth'
+        checkpoint_file = '../diffusion_test/{}/{}/'+args.contrast+'_content.pth'
 
     #define optimizer for adaptation
     optimizerG = optim.Adam(netG.parameters(), lr=args.lr_g, betas = (args.beta1, args.beta2))
@@ -262,7 +262,7 @@ def sample_and_test(args):
     #load coefficients of the diffusion model
     pos_coeff = Posterior_Coefficients(args, device)
     #saving directoy     
-    save_dir = "../diffusion_test/saved_info/dd_gan/{}/{}/".format(args.dataset,  args.exp)
+    save_dir = "../diffusion_test/{}/{}/".format(args.dataset,  args.exp)
     #if the path doesnt exist create it
     if not os.path.exists(save_dir):
         os.makedirs(save_dir)
