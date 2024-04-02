@@ -95,7 +95,7 @@ def add_singlecoil_train_args(parser: argparse.ArgumentParser):
     parser.add_argument('--save_content_every', type=int, default=50,
                         help='save content for resuming every x epochs')
     parser.add_argument('--save_ckpt_every', type=int, default=25,
-                        help='save ckpt every x epochs')
+                        help='save checkpoint every x epochs')
 
     # DDP
     parser.add_argument('--num_nodes', type=int, default=1,
