@@ -1,10 +1,7 @@
-
-
 import torch
 import tensorflow as tf
 import os
 import logging
-
 
 def restore_checkpoint(ckpt_dir, state, device):
   if not tf.io.gfile.exists(ckpt_dir):
