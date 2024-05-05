@@ -44,8 +44,8 @@ def sample_from_model(coefficients, generator, n_time, us, mask, args, device):
     """
     x_breve = -1 * torch.ones(args.batch_size, args.num_channels, args.image_size, args.image_size).to(device)
 
-    # x_dot = data_consistency(x_breve, us, mask)
-    x = data_consistency(x_breve, us, mask)
+    x_dot = data_consistency(x_breve, us, mask)
+    x = x_dot # First iteration: x_dot is better than x_breve
     with torch.no_grad():
         n_batch = x_breve.size(0)
         for i in reversed(range(n_time)):
