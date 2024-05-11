@@ -39,7 +39,7 @@ def CreateTrainDataset(phase='train', conditional=False, shuffle=True, joint=Fal
     joint == True: #channel = 3, #samples = 800 (800 per contrast)
     joint == False: #channel = 1, #samples = 2400 (800 per contrast)
     """
-    file_names = [f'{w}_1_multi_synth_recon_' for w in ['T1', 'T2', 'PD']]
+    file_names = [f'{w}_1_multi_synth_recon_HFS_' for w in ['T1', 'T2', 'PD']]
     data_fs_list = [LoadDataSet(os.path.join(DATASET_BASE_PATH, name + str(phase) + '.mat')) \
                         for name in file_names]
 
@@ -99,14 +99,20 @@ def CreateDatasetReconstruction(phase='test', data='IXI', contrast='T1', R=4):
     Load paired fully sampled and undersampled images along with
     undersampling masks for reconstruction (inference stage w/ fast-adaptation)
     """
-    file_name = f'{contrast}_{R}_multi_synth_recon_' + str(phase) + '.mat'
+    file_name = f'{contrast}_{R}_multi_synth_recon_HFS_' + str(phase) + '.mat'
     data_fs = LoadDataSet(os.path.join(DATASET_BASE_PATH, file_name))
     data_us = LoadDataSet(os.path.join(DATASET_BASE_PATH, file_name),
                           variable='data_us', padding=False, Norm=False)
+    data_acs = LoadDataSet(os.path.join(DATASET_BASE_PATH, file_name),
+                           variable='data_acs', padding=False, Norm=False)
     masks = LoadDataSet(os.path.join(DATASET_BASE_PATH, file_name),
                         variable='us_masks', padding=False, Norm=False)
+    acs_masks = LoadDataSet(os.path.join(DATASET_BASE_PATH, file_name),
+                            variable='acs_masks', padding=False, Norm=False)
 
     dataset = TensorDataset(torch.from_numpy(data_fs),
                             torch.from_numpy(data_us),
-                            torch.from_numpy(masks))
+                            torch.from_numpy(data_acs),
+                            torch.from_numpy(masks),
+                            torch.from_numpy(acs_masks))
     return dataset 

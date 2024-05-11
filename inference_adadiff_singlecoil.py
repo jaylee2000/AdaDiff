@@ -99,24 +99,52 @@ def fft2c(x, dim=((-2,-1)), img_shape=None):
     x = torch.fft.fftshift(torch.fft.fft2(torch.fft.ifftshift(x, dim=dim), s=img_shape, dim=dim), dim = dim)
     return x
 
-def prepare_data(fs, us, mask, device):
+def prepare_data(fs, us, acs, mask, acs_mask, device):
     #make us complex
     us = us[:,[0],:]*np.exp(1j*(us[:,[1],:]*2*np.pi-np.pi))
-    #move variables to device          
+    # make acs complex
+    acs = acs[:,[0],:]*np.exp(1j*(acs[:,[1],:]*2*np.pi-np.pi))
+    #move variables to device
     us = us.to(device)
     fs = fs.to(device)
+    acs = acs.to(device)
     mask = mask.to(device)
+    acs_mask = acs_mask > 0.5 # make boolean
+    acs_mask = acs_mask.to(device)
     fs = crop_us(us, fs)
-    return fs, us, mask
+    return fs, us, acs, mask, acs_mask
 
-def save_recon_results(save_dir, args, recons, recons_inter, psnr_res, synth_image, us, fs, image_idx):
+def apply_data_consistency_ACS(synth_image_res, acs, acs_mask):
+    """
+    input: synth_image_res (256x152 image), acs (256x152 image), acs_mask (256x152 binary mask)
+    output: consist_image (256x152 image)
+    function: add [fourier transform of synth_image_res] and [fourier transform acs where acs_mask is 1], then take inverse fourier transform
+    """
+    consist_frequency = fft2c(synth_image_res) * ~acs_mask + fft2c(acs) * acs_mask
+    consist_image = torch.abs(ifft2c(consist_frequency))
+    return consist_image
+
+def apply_data_consistency_ACS_256(synth_image_res, acs, acs_mask):
+    """
+    input: synth_image_res (256x256 image), acs (256x152 image), acs_mask (256x152 binary mask)
+    output: consist_image (256x256 image)
+    function: add [fourier transform of synth_image_res] and [fourier transform acs where acs_mask is 1], then take inverse fourier transform
+    * pad 0's to acs_mask to make it 256x256
+    """
+    acs = torch.nn.functional.pad(acs, (52, 52, 0, 0))
+    acs_mask = torch.nn.functional.pad(acs_mask, (52, 52, 0, 0))
+    consist_frequency = fft2c(synth_image_res) * ~acs_mask + fft2c(acs) * acs_mask
+    consist_image = torch.abs(ifft2c(consist_frequency))
+    return consist_image
+
+def save_recon_results(save_dir, args, recons, recons_inter, psnr_res, synth_image_res, us, fs, image_idx):
     np.save(f'{save_dir}{args.contrast}_{args.phase}_{args.R}_recons_{args.itr_inf}_final.npy', recons)
     if args.save_inter:
         np.save(f'{save_dir}{args.contrast}_{args.phase}_{args.R}_recons_{args.itr_inf}_inter.npy', recons_inter)
 
     np.save(f'{save_dir}{args.contrast}_{args.phase}_{args.R}_psnr_{args.itr_inf}_final.npy', psnr_res)
 
-    synth_final_res = to_range_0_1(crop_us(us, synth_image))
+    synth_final_res = to_range_0_1(crop_us(us, synth_image_res))
     fs = to_range_0_1(fs)
     us = torch.abs(us)
     print(f'image_idx - {image_idx}')
@@ -135,6 +163,9 @@ def sample_and_test(args):
     shape = data_loader.dataset[0][1].shape
 
     netG = load_pretrained_model(args, device, init=True)
+    args2 = args
+    args2.exp = "hfs_0505"
+    netG_HFS = load_pretrained_model(args2, device, init=True)
 
     optimizerG = torch.optim.Adam(netG.parameters(), lr=args.lr_g, betas=(args.beta1, args.beta2))
     schedulerG = set_lr_schedule(args, optimizerG)
@@ -149,13 +180,14 @@ def sample_and_test(args):
         recons_inter = np.zeros((int(args.itr_inf/100+1), MAX_ITER, shape[-2], shape[-1]), \
                                  dtype = np.float32)
 
-    for image_idx, (fs, us, mask) in enumerate(data_loader):
+    for image_idx, (fs, us, acs, mask, acs_mask) in enumerate(data_loader):
         if image_idx > MAX_ITER:
             break
-        fs, us, mask = prepare_data(fs, us, mask, device)
+        fs, us, acs, mask, acs_mask = prepare_data(fs, us, acs, mask, acs_mask, device)
 
         # Rapid Diffusion
-        rapid_diffusion_res = sample_from_model(pos_coeff, netG, args.num_timesteps, us, mask, args, device)
+        rapid_diffusion_res = sample_from_model(pos_coeff, netG_HFS, args.num_timesteps, us, mask, args, device)
+        rapid_diffusion_res = apply_data_consistency_ACS_256(rapid_diffusion_res, acs, acs_mask)
 
         # Prior Adaptation
         t = torch.zeros([1], device=device)
@@ -170,6 +202,10 @@ def sample_and_test(args):
             synth_image[fs==-1] = -1
 
             psnr_res[image_idx, ii] = psnr(div_mean(to_range_0_1(crop_us(us, synth_image))), div_mean(to_range_0_1(fs)))
+            # # apply data consistency w.r.t. ACS
+            # synth_image_res = apply_data_consistency_ACS(synth_image, acs, acs_mask)
+
+            # psnr_res[image_idx, ii] = psnr(div_mean(to_range_0_1(crop_us(us, synth_image_res))), div_mean(to_range_0_1(fs)))
 
             # backward pass
             lossDC.backward() 
@@ -179,9 +215,12 @@ def sample_and_test(args):
             synth_image = synth_image.detach()
             # save intermediate reconstruction
             if ii % 100 == 0 and args.save_inter:
+                # recons_inter[int(ii/100), image_idx, :] = np.squeeze(to_range_0_1(crop_us(us, synth_image_res)).cpu().detach().numpy())
                 recons_inter[int(ii/100), image_idx, :] = np.squeeze(to_range_0_1(crop_us(us, synth_image)).cpu().numpy())
 
         # save final reconstruction
+        # recons[image_idx, :] = np.squeeze(to_range_0_1(crop_us(us, synth_image_res)).cpu().detach().numpy())
+        # save_recon_results(save_dir, args, recons, recons_inter, psnr_res, synth_image_res, us, fs, image_idx)
         recons[image_idx, :] = np.squeeze(to_range_0_1(crop_us(us, synth_image)).cpu().numpy())
         save_recon_results(save_dir, args, recons, recons_inter, psnr_res, synth_image, us, fs, image_idx)
 
